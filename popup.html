@@ -1,0 +1,343 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LeetCode to GitHub Sync</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface-hover: #1c2129;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --success: #3fb950;
+        --fail: #f85149;
+        --skip: #6e7681;
+        --accent: #58a6ff;
+        --easy: #00b8a3;
+        --medium: #ffc01e;
+        --hard: #ff375f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      /* .retry-banner sets display:flex, which otherwise beats the browser's
+         default [hidden] rule at equal specificity and would keep it visible. */
+      [hidden] {
+        display: none !important;
+      }
+
+      body {
+        width: 380px;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 13px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .brand-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--easy), var(--accent));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        flex-shrink: 0;
+      }
+
+      .brand-text {
+        min-width: 0;
+      }
+
+      .brand-title {
+        font-weight: 600;
+        font-size: 13.5px;
+        line-height: 1.3;
+      }
+
+      .brand-repo {
+        color: var(--text-muted);
+        font-size: 11.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .icon-button {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background 0.15s, color 0.15s;
+      }
+
+      .icon-button:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+
+      .retry-banner {
+        margin: 12px 16px 0;
+        padding: 10px 12px;
+        background: rgba(248, 81, 73, 0.1);
+        border: 1px solid rgba(248, 81, 73, 0.35);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .retry-text {
+        min-width: 0;
+      }
+
+      .retry-title {
+        display: block;
+        font-weight: 600;
+        color: var(--fail);
+        font-size: 12.5px;
+      }
+
+      .retry-detail {
+        display: block;
+        color: var(--text-muted);
+        font-size: 11.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+
+      .retry-button {
+        flex-shrink: 0;
+        background: var(--fail);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+
+      .retry-button:hover {
+        opacity: 0.88;
+      }
+
+      .retry-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .activity-list {
+        max-height: 360px;
+        overflow-y: auto;
+        padding: 8px;
+      }
+
+      .activity-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 8px;
+        border-radius: 8px;
+        text-decoration: none;
+        color: inherit;
+        cursor: default;
+      }
+
+      a.activity-row {
+        cursor: pointer;
+      }
+
+      a.activity-row:hover {
+        background: var(--surface);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .status-success {
+        background: var(--success);
+        box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+      }
+
+      .status-failed {
+        background: var(--fail);
+        box-shadow: 0 0 6px rgba(248, 81, 73, 0.6);
+      }
+
+      .status-skipped {
+        background: var(--skip);
+      }
+
+      .activity-main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .activity-title {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .difficulty-tag {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+
+      .difficulty-easy {
+        color: var(--easy);
+        background: rgba(0, 184, 163, 0.15);
+      }
+
+      .difficulty-medium {
+        color: var(--medium);
+        background: rgba(255, 192, 30, 0.15);
+      }
+
+      .difficulty-hard {
+        color: var(--hard);
+        background: rgba(255, 55, 95, 0.15);
+      }
+
+      .activity-meta {
+        color: var(--text-muted);
+        font-size: 11.5px;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .activity-meta-error {
+        color: var(--fail);
+      }
+
+      .chevron {
+        color: var(--text-muted);
+        font-size: 16px;
+        flex-shrink: 0;
+      }
+
+      .empty-state {
+        padding: 40px 24px;
+        text-align: center;
+      }
+
+      .empty-icon {
+        font-size: 28px;
+        margin-bottom: 10px;
+      }
+
+      .empty-text {
+        color: var(--text-muted);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+
+      footer {
+        padding: 10px 16px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: center;
+      }
+
+      .footer-link {
+        color: var(--text-muted);
+        font-size: 11.5px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .footer-link:hover {
+        color: var(--accent);
+      }
+
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <div class="brand-icon">🔗</div>
+        <div class="brand-text">
+          <div class="brand-title">LeetCode Sync</div>
+          <div class="brand-repo" id="repoLabel">Not configured</div>
+        </div>
+      </div>
+      <button class="icon-button" id="openOptions" title="Settings">⚙</button>
+    </header>
+
+    <div class="retry-banner" id="retryBanner" hidden>
+      <div class="retry-text">
+        <span class="retry-title">Last sync failed</span>
+        <span class="retry-detail" id="retryDetail"></span>
+      </div>
+      <button class="retry-button" id="retryButton">Retry</button>
+    </div>
+
+    <div class="activity-list" id="activityList"></div>
+
+    <div class="empty-state" id="emptyState" hidden>
+      <div class="empty-icon">🧩</div>
+      <div class="empty-text">No submissions synced yet.<br />Solve something on LeetCode to get started.</div>
+    </div>
+
+    <footer>
+      <span class="footer-link" id="openOptionsFooter">Settings</span>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

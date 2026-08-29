@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode to GitHub Sync",
+  "version": "0.1.0",
+  "description": "Syncs every LeetCode submission (accepted and failed) to a GitHub repo, keeping every accepted attempt as its own file.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "LeetCode to GitHub Sync",
+    "default_popup": "popup.html"
+  }
+}

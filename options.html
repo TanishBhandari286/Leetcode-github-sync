@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LeetCode to GitHub Sync — Settings</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --border: #30363d;
+        --border-focus: #58a6ff;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --success: #3fb950;
+        --fail: #f85149;
+        --accent: #58a6ff;
+        --easy: #00b8a3;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+
+      body {
+        display: flex;
+        justify-content: center;
+        padding: 48px 20px;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 460px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+
+      .brand-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--easy), var(--accent));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+      }
+
+      .brand-title {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .brand-subtitle {
+        font-size: 12.5px;
+        color: var(--text-muted);
+        margin-top: 1px;
+      }
+
+      .field {
+        margin-bottom: 22px;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      input {
+        width: 100%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 10px 12px;
+        font-size: 13.5px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+
+      input::placeholder {
+        color: #6e7681;
+      }
+
+      input:focus {
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+
+      .hint code {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 11.5px;
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .toggle-text label {
+        margin-bottom: 4px;
+      }
+
+      .toggle-text .hint {
+        margin-top: 2px;
+      }
+
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 22px;
+        flex-shrink: 0;
+        cursor: pointer;
+        margin-top: 2px;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+
+      .switch-track {
+        position: absolute;
+        inset: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .switch-thumb {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background: var(--text-muted);
+        border-radius: 50%;
+        transition: transform 0.15s, background 0.15s;
+      }
+
+      .switch input:checked + .switch-track {
+        background: rgba(0, 184, 163, 0.25);
+        border-color: var(--easy);
+      }
+
+      .switch input:checked + .switch-track .switch-thumb {
+        transform: translateX(18px);
+        background: var(--easy);
+      }
+
+      .switch input:focus-visible + .switch-track {
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.25);
+      }
+
+      button {
+        width: 100%;
+        background: linear-gradient(135deg, var(--easy), var(--accent));
+        color: #06121f;
+        border: none;
+        border-radius: 8px;
+        padding: 11px 16px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: opacity 0.15s, transform 0.05s;
+      }
+
+      button:hover {
+        opacity: 0.92;
+      }
+
+      button:active {
+        transform: scale(0.99);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      #status {
+        margin-top: 16px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        display: none;
+      }
+
+      #status.visible {
+        display: block;
+      }
+
+      #status.ok {
+        color: var(--success);
+        background: rgba(63, 185, 80, 0.1);
+        border: 1px solid rgba(63, 185, 80, 0.35);
+      }
+
+      #status.error {
+        color: var(--fail);
+        background: rgba(248, 81, 73, 0.1);
+        border: 1px solid rgba(248, 81, 73, 0.35);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="brand">
+        <div class="brand-icon">🔗</div>
+        <div>
+          <div class="brand-title">LeetCode to GitHub Sync</div>
+          <div class="brand-subtitle">Connect your GitHub repo to start syncing submissions</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="token">GitHub Personal Access Token</label>
+        <input id="token" type="password" placeholder="github_pat_..." autocomplete="off" />
+        <div class="hint">
+          Use a token scoped to just the target repo with <code>Contents: Read and write</code> permission
+          (fine-grained), or the classic <code>repo</code> scope.
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="repo">Target repo</label>
+        <input id="repo" type="text" placeholder="your-username/leetcode-solutions" />
+      </div>
+
+      <div class="field">
+        <label for="basePath">Base folder (optional)</label>
+        <input id="basePath" type="text" placeholder="problems" />
+      </div>
+
+      <div class="field toggle-row">
+        <div class="toggle-text">
+          <label for="syncFailedAttempts">Sync failed submissions</label>
+          <div class="hint">
+            Also commit Wrong Answer, TLE, and other non-Accepted attempts. Turn off to only sync Accepted
+            solutions.
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="syncFailedAttempts" checked />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+
+      <button id="save">Validate &amp; Save</button>
+      <div id="status"></div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>
