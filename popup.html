@@ -160,6 +160,77 @@
         cursor: default;
       }
 
+      .backfill-panel {
+        margin: 12px 16px 0;
+        padding: 10px 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .backfill-text {
+        min-width: 0;
+      }
+
+      .backfill-title {
+        display: block;
+        font-weight: 600;
+        font-size: 12.5px;
+      }
+
+      .backfill-detail {
+        display: block;
+        color: var(--text-muted);
+        font-size: 11.5px;
+        line-height: 1.4;
+        margin-top: 2px;
+      }
+
+      .backfill-detail.is-error {
+        color: var(--fail);
+      }
+
+      .backfill-button {
+        flex-shrink: 0;
+        background: var(--accent);
+        color: #04101c;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+
+      .backfill-button:hover {
+        opacity: 0.88;
+      }
+
+      .backfill-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .backfill-progress-track {
+        margin-top: 8px;
+        height: 4px;
+        border-radius: 999px;
+        background: var(--border);
+        overflow: hidden;
+      }
+
+      .backfill-progress-fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 999px;
+        transition: width 0.2s ease;
+      }
+
       .activity-list {
         max-height: 360px;
         overflow-y: auto;
@@ -318,6 +389,20 @@
       </div>
       <button class="icon-button" id="openOptions" title="Settings">⚙</button>
     </header>
+
+    <div class="backfill-panel" id="backfillPanel">
+      <div class="backfill-text">
+        <span class="backfill-title" id="backfillTitle">Backfill past solves</span>
+        <span class="backfill-detail" id="backfillDetail"
+          >Pulls every accepted submission from your LeetCode history into this repo - handy if you're migrating
+          from LeetHub or another tool.</span
+        >
+        <div class="backfill-progress-track" id="backfillProgressTrack" hidden>
+          <div class="backfill-progress-fill" id="backfillProgressFill" style="width: 0%"></div>
+        </div>
+      </div>
+      <button class="backfill-button" id="backfillButton">Backfill</button>
+    </div>
 
     <div class="retry-banner" id="retryBanner" hidden>
       <div class="retry-text">

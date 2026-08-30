@@ -6,6 +6,10 @@ const retryDetail = document.getElementById("retryDetail");
 const retryButton = document.getElementById("retryButton");
 const activityList = document.getElementById("activityList");
 const emptyState = document.getElementById("emptyState");
+const backfillDetail = document.getElementById("backfillDetail");
+const backfillButton = document.getElementById("backfillButton");
+const backfillProgressTrack = document.getElementById("backfillProgressTrack");
+const backfillProgressFill = document.getElementById("backfillProgressFill");
 
 const DIFFICULTY_CLASS = { Easy: "difficulty-easy", Medium: "difficulty-medium", Hard: "difficulty-hard" };
 
@@ -92,12 +96,60 @@ function renderRow(entry) {
   return row;
 }
 
+function renderBackfillPanel(backfillStatus) {
+  const status = backfillStatus || {};
+  backfillProgressTrack.hidden = true;
+  backfillDetail.classList.remove("is-error");
+
+  if (status.running) {
+    backfillButton.disabled = true;
+    backfillButton.textContent = "Running...";
+    if (status.note) {
+      backfillDetail.textContent = status.note;
+    } else if (status.phase === "scanning") {
+      backfillDetail.textContent = `Scanning your submission history... ${status.scanned || 0} checked so far.`;
+    } else {
+      const total = status.totalAccepted || 0;
+      const done = (status.synced || 0) + (status.skipped || 0) + (status.failed || 0);
+      backfillDetail.textContent = status.currentTitle
+        ? `Syncing ${done}/${total} - ${status.currentTitle}`
+        : `Syncing ${done}/${total} accepted submissions...`;
+    }
+    if (status.phase === "syncing") {
+      const total = status.totalAccepted || 0;
+      const done = (status.synced || 0) + (status.skipped || 0) + (status.failed || 0);
+      backfillProgressTrack.hidden = false;
+      backfillProgressFill.style.width = total > 0 ? `${Math.min(100, (done / total) * 100)}%` : "0%";
+    }
+    return;
+  }
+
+  backfillButton.disabled = false;
+  backfillButton.textContent = status.finishedAt ? "Run again" : "Backfill";
+
+  if (status.phase === "error") {
+    backfillDetail.textContent = `Backfill failed: ${(status.error || "unknown error").slice(0, 120)}`;
+    backfillDetail.classList.add("is-error");
+  } else if (status.phase === "done") {
+    backfillDetail.textContent =
+      `Done - ${status.synced || 0} synced, ${status.skipped || 0} already up to date` +
+      (status.failed ? `, ${status.failed} failed` : "") +
+      ` · ${relativeTime(status.finishedAt)}`;
+  } else {
+    backfillDetail.textContent =
+      "Pulls every accepted submission from your LeetCode history into this repo - handy if you're migrating from LeetHub or another tool.";
+  }
+}
+
 async function render() {
-  const { activityLog = [], lastFailedSync = null, githubRepo } = await chrome.storage.local.get([
-    "activityLog",
-    "lastFailedSync",
-    "githubRepo",
-  ]);
+  const {
+    activityLog = [],
+    lastFailedSync = null,
+    githubRepo,
+    backfillStatus = null,
+  } = await chrome.storage.local.get(["activityLog", "lastFailedSync", "githubRepo", "backfillStatus"]);
+
+  renderBackfillPanel(backfillStatus);
 
   repoLabel.textContent = githubRepo || "Not configured";
 
@@ -134,8 +186,32 @@ retryButton.addEventListener("click", async () => {
   }
 });
 
+backfillButton.addEventListener("click", async () => {
+  backfillButton.disabled = true;
+  backfillButton.textContent = "Starting...";
+  // On success, leave rendering to the storage.onChanged listener below -
+  // content.js writes "backfillStatus" almost immediately once it starts,
+  // and a render() here would just race that write with stale data.
+  const result = await chrome.runtime.sendMessage({ type: "START_BACKFILL" });
+  if (!result?.ok) {
+    backfillButton.disabled = false;
+    backfillButton.textContent = "Backfill";
+    backfillDetail.classList.add("is-error");
+    if (result?.reason === "no_leetcode_tab") {
+      backfillDetail.textContent = "Open any LeetCode problem page in a tab first, then try again.";
+    } else if (result?.reason === "already_running") {
+      backfillDetail.textContent = "A backfill is already in progress.";
+    } else {
+      backfillDetail.textContent = "Couldn't start the backfill - check the console on your LeetCode tab.";
+    }
+  }
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.activityLog || changes.lastFailedSync || changes.githubRepo)) {
+  if (
+    area === "local" &&
+    (changes.activityLog || changes.lastFailedSync || changes.githubRepo || changes.backfillStatus)
+  ) {
     render();
   }
 });

@@ -575,11 +575,25 @@ async function updateIndex(token, repo, payload) {
     lines = [...statsBlockLines, "", ...lines];
   }
 
-  if (!lines.some((line) => line.trim() === TABLE_HEADER_LINES[0])) {
+  let headerIdx = lines.findIndex((line) => line.trim() === TABLE_HEADER_LINES[0]);
+  if (headerIdx === -1) {
     lines.push("", ...TABLE_HEADER_LINES);
+    headerIdx = lines.length - TABLE_HEADER_LINES.length;
   }
 
-  const rowIndex = lines.findIndex((line) => line.includes(marker));
+  // The table body is whatever "| ... |" lines sit directly below the header +
+  // separator, with no gap. A new row MUST be spliced in right after the last
+  // of those — pushing it to the end of the file instead leaves a blank-line
+  // gap that breaks GitHub's Markdown table parsing (the row then renders as
+  // plain text below the table instead of as part of it).
+  let tableEndIdx = headerIdx + 2;
+  while (tableEndIdx < lines.length && lines[tableEndIdx].trim().startsWith("|")) {
+    tableEndIdx++;
+  }
+
+  const rowIndex = lines.findIndex(
+    (line, idx) => idx >= headerIdx + 2 && idx < tableEndIdx && line.includes(marker)
+  );
   if (rowIndex !== -1 && lines[rowIndex].includes("Accepted")) {
     finalStatus = "Accepted";
   }
@@ -587,7 +601,7 @@ async function updateIndex(token, repo, payload) {
   if (rowIndex !== -1) {
     lines[rowIndex] = newRow;
   } else {
-    lines.push(newRow);
+    lines.splice(tableEndIdx, 0, newRow);
   }
 
   const newContent = lines.join("\n") + "\n";
@@ -693,6 +707,33 @@ async function retryLastFailedSync() {
   return syncSubmission(lastFailedSync.payload);
 }
 
+// The actual history fetch + per-submission sync loop lives in content.js -
+// it runs in LeetCode's own page context, which is what lets it read the
+// session cookie needed for LeetCode's submissions API and GraphQL endpoint.
+// This just finds a LeetCode tab to relay the request to and kicks it off;
+// progress after that is reported via chrome.storage.local ("backfillStatus"),
+// which the popup listens to directly.
+async function startBackfill() {
+  const { backfillStatus } = await chrome.storage.local.get("backfillStatus");
+  if (backfillStatus?.running) {
+    return { ok: false, reason: "already_running" };
+  }
+
+  const tabs = await chrome.tabs.query({ url: "https://leetcode.com/problems/*" });
+  const tab = tabs[0];
+  if (!tab) {
+    return { ok: false, reason: "no_leetcode_tab" };
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "RUN_BACKFILL" });
+    return { ok: true };
+  } catch (err) {
+    console.error("[LeetCode->GitHub] could not reach content script for backfill", err);
+    return { ok: false, reason: "content_script_unreachable", error: String(err) };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SYNC_SUBMISSION") {
     syncSubmission(message.payload).then(sendResponse);
@@ -700,6 +741,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "RETRY_LAST_FAILED") {
     retryLastFailedSync().then(sendResponse);
+    return true;
+  }
+  if (message?.type === "START_BACKFILL") {
+    startBackfill().then(sendResponse);
     return true;
   }
   return false;
