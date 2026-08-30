@@ -2,25 +2,62 @@ const tokenInput = document.getElementById("token");
 const repoInput = document.getElementById("repo");
 const basePathInput = document.getElementById("basePath");
 const syncFailedAttemptsInput = document.getElementById("syncFailedAttempts");
+const encryptTokenInput = document.getElementById("encryptToken");
+const passphraseFields = document.getElementById("passphraseFields");
+const passphraseInput = document.getElementById("passphrase");
+const passphraseConfirmInput = document.getElementById("passphraseConfirm");
 const saveButton = document.getElementById("save");
 const statusEl = document.getElementById("status");
 
-function setStatus(message, isError) {
+const MIN_PASSPHRASE_LENGTH = 8;
+
+// kind: "ok" | "error" | "info". Progress and advisory messages must not use
+// "ok" - green reads as "that worked", which is wrong for something still in
+// flight or for a notice that the token is locked.
+function setStatus(message, kind = "info") {
   statusEl.textContent = message;
-  statusEl.className = `visible ${isError ? "error" : "ok"}`;
+  statusEl.className = `visible ${kind}`;
+}
+
+function syncPassphraseVisibility() {
+  passphraseFields.hidden = !encryptTokenInput.checked;
 }
 
 async function loadSettings() {
-  const { githubToken, githubRepo, basePath, syncFailedAttempts } = await chrome.storage.local.get([
-    "githubToken",
-    "githubRepo",
-    "basePath",
-    "syncFailedAttempts",
-  ]);
-  if (githubToken) tokenInput.value = githubToken;
+  const { githubToken, encryptedToken, githubRepo, basePath, syncFailedAttempts } =
+    await chrome.storage.local.get([
+      "githubToken",
+      "encryptedToken",
+      "githubRepo",
+      "basePath",
+      "syncFailedAttempts",
+    ]);
+
   if (githubRepo) repoInput.value = githubRepo;
   basePathInput.value = basePath || "problems";
   syncFailedAttemptsInput.checked = syncFailedAttempts !== false;
+  encryptTokenInput.checked = Boolean(encryptedToken);
+  syncPassphraseVisibility();
+
+  if (!encryptedToken) {
+    if (githubToken) tokenInput.value = githubToken;
+    return;
+  }
+
+  // Encrypted: only prefill if this browser session is already unlocked.
+  // Otherwise the user has to paste a token again to change anything here,
+  // which is the honest consequence of the key not being on disk.
+  const { tokenKey } = await chrome.storage.session.get("tokenKey");
+  if (!tokenKey) {
+    setStatus("Your token is encrypted and locked. Unlock from the extension popup, or paste a new token below to replace it.", "info");
+    return;
+  }
+  try {
+    tokenInput.value = await LcgsCrypto.decryptToken(encryptedToken, tokenKey);
+  } catch (err) {
+    console.warn("[LeetCode->GitHub] could not decrypt stored token", err);
+    setStatus("Stored token could not be decrypted. Paste a token below to replace it.", "error");
+  }
 }
 
 function githubHeaders(token, extra) {
@@ -92,34 +129,74 @@ async function validateToken(token, repo) {
 saveButton.addEventListener("click", async () => {
   const token = tokenInput.value.trim();
   const repo = repoInput.value.trim();
-  const basePath = basePathInput.value.trim() || "problems";
+  const basePath = (basePathInput.value.trim() || "problems").replace(/^\/+|\/+$/g, "");
 
   if (!token || !repo) {
-    setStatus("Token and target repo are both required.", true);
+    setStatus("Token and target repo are both required.", "error");
     return;
   }
-  if (!repo.includes("/")) {
-    setStatus('Target repo must be in "owner/repo" format.', true);
+  // The repo string is interpolated straight into every GitHub API URL, so it
+  // has to be exactly "owner/repo" and nothing else - an "includes a slash"
+  // check would happily pass a value carrying extra path segments or a query.
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
+    setStatus('Target repo must be in "owner/repo" format.', "error");
     return;
+  }
+  // basePath is prepended to every committed file path, so a ".." segment
+  // would write outside the folder the user thinks they picked.
+  if (basePath.split("/").some((segment) => segment === "..")) {
+    setStatus('Base folder cannot contain ".." segments.', "error");
+    return;
+  }
+
+  const usePassphrase = encryptTokenInput.checked;
+  const passphrase = passphraseInput.value;
+  if (usePassphrase) {
+    if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      setStatus(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`, "error");
+      return;
+    }
+    if (passphrase !== passphraseConfirmInput.value) {
+      setStatus("The two passphrases don't match.", "error");
+      return;
+    }
   }
 
   saveButton.disabled = true;
-  setStatus("Validating token, repo access, and write permission...", false);
+  setStatus("Validating token, repo access, and write permission...", "info");
 
   try {
     await validateToken(token, repo);
     await chrome.storage.local.set({
-      githubToken: token,
       githubRepo: repo,
       basePath,
       syncFailedAttempts: syncFailedAttemptsInput.checked,
     });
-    setStatus("Saved. Token, repo access, and write permission confirmed.", false);
+
+    if (usePassphrase) {
+      const { record, keyB64 } = await LcgsCrypto.encryptToken(token, passphrase);
+      await chrome.storage.local.set({ encryptedToken: record });
+      // The plaintext copy must go, or encrypting it accomplished nothing.
+      await chrome.storage.local.remove("githubToken");
+      // Unlock straight away so saving doesn't immediately lock the user out.
+      await chrome.storage.session.set({ tokenKey: keyB64 });
+      setStatus("Saved and encrypted. You'll re-enter this passphrase after each browser restart.", "ok");
+    } else {
+      await chrome.storage.local.set({ githubToken: token });
+      await chrome.storage.local.remove("encryptedToken");
+      await chrome.storage.session.remove("tokenKey");
+      setStatus("Saved. Token, repo access, and write permission confirmed.", "ok");
+    }
+
+    passphraseInput.value = "";
+    passphraseConfirmInput.value = "";
   } catch (err) {
-    setStatus(err.message, true);
+    setStatus(err.message, "error");
   } finally {
     saveButton.disabled = false;
   }
 });
+
+encryptTokenInput.addEventListener("change", syncPassphraseVisibility);
 
 loadSettings();

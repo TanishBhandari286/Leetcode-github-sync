@@ -5,12 +5,14 @@
     <title>LeetCode to GitHub Sync</title>
     <style>
       :root {
-        --bg: #0d1117;
-        --surface: #161b22;
-        --surface-hover: #1c2129;
-        --border: #30363d;
+        --bg: #0b0f14;
+        --surface: #131a22;
+        --surface-hover: #182029;
+        --border: #232c38;
+        --border-strong: #2f3a49;
         --text: #e6edf3;
-        --text-muted: #8b949e;
+        --text-muted: #8b98a9;
+        --text-dim: #66717f;
         --success: #3fb950;
         --fail: #f85149;
         --skip: #6e7681;
@@ -18,52 +20,70 @@
         --easy: #00b8a3;
         --medium: #ffc01e;
         --hard: #ff375f;
+        --radius: 10px;
+        --chevron-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
       }
 
       * {
         box-sizing: border-box;
       }
 
-      /* .retry-banner sets display:flex, which otherwise beats the browser's
-         default [hidden] rule at equal specificity and would keep it visible. */
+      /* Explicit: an author rule setting `display` on an element beats the
+         browser's default [hidden] rule at equal specificity. */
       [hidden] {
         display: none !important;
       }
 
       body {
-        width: 380px;
+        width: 400px;
         margin: 0;
         background: var(--bg);
         color: var(--text);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
         font-size: 13px;
+        -webkit-font-smoothing: antialiased;
       }
+
+      button {
+        font-family: inherit;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+
+      /* ---------- header ---------- */
 
       header {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
         padding: 14px 16px;
         border-bottom: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(88, 166, 255, 0.05), transparent);
       }
 
       .brand {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 11px;
         min-width: 0;
       }
 
       .brand-icon {
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
         background: linear-gradient(135deg, var(--easy), var(--accent));
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 15px;
         flex-shrink: 0;
+        color: #04101c;
+        box-shadow: 0 2px 8px rgba(0, 184, 163, 0.25);
       }
 
       .brand-text {
@@ -71,14 +91,16 @@
       }
 
       .brand-title {
-        font-weight: 600;
+        font-weight: 650;
         font-size: 13.5px;
-        line-height: 1.3;
+        line-height: 1.25;
+        letter-spacing: -0.01em;
       }
 
       .brand-repo {
         color: var(--text-muted);
         font-size: 11.5px;
+        line-height: 1.35;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -88,84 +110,351 @@
         background: transparent;
         border: 1px solid var(--border);
         color: var(--text-muted);
-        width: 28px;
-        height: 28px;
-        border-radius: 6px;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
         cursor: pointer;
-        font-size: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
-        transition: background 0.15s, color 0.15s;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
       }
 
       .icon-button:hover {
         background: var(--surface-hover);
         color: var(--text);
+        border-color: var(--border-strong);
       }
 
-      .retry-banner {
-        margin: 12px 16px 0;
-        padding: 10px 12px;
-        background: rgba(248, 81, 73, 0.1);
-        border: 1px solid rgba(248, 81, 73, 0.35);
-        border-radius: 8px;
+      /* ---------- panels (unlock / retry) ---------- */
+
+      .panel {
+        margin: 12px 14px 0;
+        padding: 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .panel-accent {
+        background: rgba(88, 166, 255, 0.07);
+        border-color: rgba(88, 166, 255, 0.3);
+      }
+
+      .panel-danger {
+        background: rgba(248, 81, 73, 0.07);
+        border-color: rgba(248, 81, 73, 0.3);
+      }
+
+      .panel-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 10px;
       }
 
-      .retry-text {
+      .panel-text {
         min-width: 0;
       }
 
-      .retry-title {
-        display: block;
+      .panel-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-weight: 600;
-        color: var(--fail);
         font-size: 12.5px;
       }
 
-      .retry-detail {
+      .panel-title.is-accent {
+        color: var(--accent);
+      }
+
+      .panel-title.is-danger {
+        color: var(--fail);
+      }
+
+      .panel-detail {
         display: block;
         color: var(--text-muted);
         font-size: 11.5px;
+        line-height: 1.45;
+        margin-top: 3px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        margin-top: 2px;
       }
 
-      .retry-button {
+      .panel-detail.wrap {
+        white-space: normal;
+      }
+
+      /* ---------- buttons ---------- */
+
+      .btn {
         flex-shrink: 0;
-        background: var(--fail);
-        color: #fff;
         border: none;
-        border-radius: 6px;
-        padding: 6px 12px;
+        border-radius: 7px;
+        padding: 7px 13px;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: opacity 0.15s;
+        transition: opacity 0.15s, background 0.15s;
+        white-space: nowrap;
       }
 
-      .retry-button:hover {
+      .btn:hover:not(:disabled) {
         opacity: 0.88;
       }
 
-      .retry-button:disabled {
-        opacity: 0.55;
+      .btn:disabled {
+        opacity: 0.5;
         cursor: default;
       }
 
-      .backfill-panel {
-        margin: 12px 16px 0;
-        padding: 10px 12px;
+      .btn-accent {
+        background: var(--accent);
+        color: #04101c;
+      }
+
+      .btn-danger {
+        background: var(--fail);
+        color: #fff;
+      }
+
+      .btn-ghost {
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        color: var(--text);
+      }
+
+      .btn-ghost:hover:not(:disabled) {
+        background: var(--surface-hover);
+        opacity: 1;
+      }
+
+      /* ---------- unlock ---------- */
+
+      .unlock-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .unlock-row input {
+        flex: 1;
+        min-width: 0;
+        background: var(--bg);
+        border: 1px solid var(--border-strong);
+        border-radius: 7px;
+        color: var(--text);
+        padding: 7px 10px;
+        font-size: 12.5px;
+        font-family: inherit;
+      }
+
+      .unlock-row input::placeholder {
+        color: var(--text-dim);
+      }
+
+      .unlock-row input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
+      }
+
+      .unlock-error {
+        color: var(--fail);
+        font-size: 11.5px;
+        margin-top: 7px;
+      }
+
+      /* ---------- section header ---------- */
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding: 16px 18px 6px;
+      }
+
+      .section-title {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+      }
+
+      .section-count {
+        font-size: 11px;
+        color: var(--text-dim);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ---------- activity list ---------- */
+
+      .activity-list {
+        max-height: 320px;
+        overflow-y: auto;
+        padding: 0 8px 8px;
+      }
+
+      .activity-row {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 9px 10px;
+        border-radius: 9px;
+        text-decoration: none;
+        color: inherit;
+        transition: background 0.13s;
+      }
+
+      a.activity-row:hover {
+        background: var(--surface-hover);
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .status-success {
+        background: var(--success);
+        box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.15);
+      }
+
+      .status-failed {
+        background: var(--fail);
+        box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.15);
+      }
+
+      .status-skipped {
+        background: var(--skip);
+        box-shadow: 0 0 0 3px rgba(110, 118, 129, 0.15);
+      }
+
+      .activity-main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      /* min-width:0 on both the row and the text is what actually lets the
+         title ellipsize; without it the flex item refuses to shrink below its
+         content and pushes the difficulty pill out of the popup entirely. */
+      .activity-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .activity-title-text {
+        font-weight: 500;
+        font-size: 12.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+
+      .difficulty-tag {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 2px 6px;
+        border-radius: 5px;
+        flex-shrink: 0;
+        text-transform: uppercase;
+      }
+
+      .difficulty-easy {
+        color: var(--easy);
+        background: rgba(0, 184, 163, 0.14);
+      }
+
+      .difficulty-medium {
+        color: var(--medium);
+        background: rgba(255, 192, 30, 0.14);
+      }
+
+      .difficulty-hard {
+        color: var(--hard);
+        background: rgba(255, 55, 95, 0.14);
+      }
+
+      .activity-meta {
+        color: var(--text-muted);
+        font-size: 11px;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .activity-meta-error {
+        color: var(--fail);
+      }
+
+      /* Drawn via mask-image so popup.js never has to touch innerHTML. */
+      .chevron {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        background-color: var(--text-dim);
+        -webkit-mask: var(--chevron-icon) center / contain no-repeat;
+        mask: var(--chevron-icon) center / contain no-repeat;
+        transition: background-color 0.13s;
+      }
+
+      a.activity-row:hover .chevron {
+        background-color: var(--text);
+      }
+
+      /* ---------- empty state ---------- */
+
+      .empty-state {
+        padding: 34px 30px 38px;
+        text-align: center;
+      }
+
+      .empty-icon {
+        width: 42px;
+        height: 42px;
+        margin: 0 auto 12px;
+        border-radius: 12px;
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-dim);
+      }
+
+      .empty-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .empty-text {
+        color: var(--text-muted);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+
+      /* ---------- backfill footer ---------- */
+
+      .backfill {
+        border-top: 1px solid var(--border);
+        padding: 12px 14px;
+        background: linear-gradient(180deg, transparent, rgba(88, 166, 255, 0.035));
+      }
+
+      .backfill-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -177,7 +466,9 @@
       }
 
       .backfill-title {
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-weight: 600;
         font-size: 12.5px;
       }
@@ -186,38 +477,16 @@
         display: block;
         color: var(--text-muted);
         font-size: 11.5px;
-        line-height: 1.4;
-        margin-top: 2px;
+        line-height: 1.45;
+        margin-top: 3px;
       }
 
       .backfill-detail.is-error {
         color: var(--fail);
       }
 
-      .backfill-button {
-        flex-shrink: 0;
-        background: var(--accent);
-        color: #04101c;
-        border: none;
-        border-radius: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: opacity 0.15s;
-      }
-
-      .backfill-button:hover {
-        opacity: 0.88;
-      }
-
-      .backfill-button:disabled {
-        opacity: 0.55;
-        cursor: default;
-      }
-
       .backfill-progress-track {
-        margin-top: 8px;
+        margin-top: 10px;
         height: 4px;
         border-radius: 999px;
         background: var(--border);
@@ -226,203 +495,121 @@
 
       .backfill-progress-fill {
         height: 100%;
-        background: var(--accent);
+        background: linear-gradient(90deg, var(--easy), var(--accent));
         border-radius: 999px;
-        transition: width 0.2s ease;
-      }
-
-      .activity-list {
-        max-height: 360px;
-        overflow-y: auto;
-        padding: 8px;
-      }
-
-      .activity-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 9px 8px;
-        border-radius: 8px;
-        text-decoration: none;
-        color: inherit;
-        cursor: default;
-      }
-
-      a.activity-row {
-        cursor: pointer;
-      }
-
-      a.activity-row:hover {
-        background: var(--surface);
-      }
-
-      .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        flex-shrink: 0;
-      }
-
-      .status-success {
-        background: var(--success);
-        box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
-      }
-
-      .status-failed {
-        background: var(--fail);
-        box-shadow: 0 0 6px rgba(248, 81, 73, 0.6);
-      }
-
-      .status-skipped {
-        background: var(--skip);
-      }
-
-      .activity-main {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .activity-title {
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .difficulty-tag {
-        font-size: 10px;
-        font-weight: 600;
-        padding: 1px 6px;
-        border-radius: 999px;
-        flex-shrink: 0;
-      }
-
-      .difficulty-easy {
-        color: var(--easy);
-        background: rgba(0, 184, 163, 0.15);
-      }
-
-      .difficulty-medium {
-        color: var(--medium);
-        background: rgba(255, 192, 30, 0.15);
-      }
-
-      .difficulty-hard {
-        color: var(--hard);
-        background: rgba(255, 55, 95, 0.15);
-      }
-
-      .activity-meta {
-        color: var(--text-muted);
-        font-size: 11.5px;
-        margin-top: 2px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .activity-meta-error {
-        color: var(--fail);
-      }
-
-      .chevron {
-        color: var(--text-muted);
-        font-size: 16px;
-        flex-shrink: 0;
-      }
-
-      .empty-state {
-        padding: 40px 24px;
-        text-align: center;
-      }
-
-      .empty-icon {
-        font-size: 28px;
-        margin-bottom: 10px;
-      }
-
-      .empty-text {
-        color: var(--text-muted);
-        font-size: 12.5px;
-        line-height: 1.5;
-      }
-
-      footer {
-        padding: 10px 16px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        justify-content: center;
-      }
-
-      .footer-link {
-        color: var(--text-muted);
-        font-size: 11.5px;
-        text-decoration: none;
-        cursor: pointer;
-      }
-
-      .footer-link:hover {
-        color: var(--accent);
+        transition: width 0.25s ease;
       }
 
       ::-webkit-scrollbar {
         width: 8px;
       }
 
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
       ::-webkit-scrollbar-thumb {
-        background: var(--border);
+        background: var(--border-strong);
         border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3d4856;
       }
     </style>
   </head>
   <body>
     <header>
       <div class="brand">
-        <div class="brand-icon">🔗</div>
+        <div class="brand-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        </div>
         <div class="brand-text">
           <div class="brand-title">LeetCode Sync</div>
           <div class="brand-repo" id="repoLabel">Not configured</div>
         </div>
       </div>
-      <button class="icon-button" id="openOptions" title="Settings">⚙</button>
+      <button class="icon-button" id="openOptions" title="Settings" aria-label="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
     </header>
 
-    <div class="backfill-panel" id="backfillPanel">
-      <div class="backfill-text">
-        <span class="backfill-title" id="backfillTitle">Backfill past solves</span>
-        <span class="backfill-detail" id="backfillDetail"
-          >Pulls every accepted submission from your LeetCode history into this repo - handy if you're migrating
-          from LeetHub or another tool.</span
-        >
-        <div class="backfill-progress-track" id="backfillProgressTrack" hidden>
-          <div class="backfill-progress-fill" id="backfillProgressFill" style="width: 0%"></div>
-        </div>
+    <div class="panel panel-accent" id="unlockPanel" hidden>
+      <div class="panel-title is-accent">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        Token locked
       </div>
-      <button class="backfill-button" id="backfillButton">Backfill</button>
+      <span class="panel-detail wrap">Enter your passphrase to resume syncing this browser session.</span>
+      <div class="unlock-row">
+        <input type="password" id="unlockPassphrase" placeholder="Passphrase" autocomplete="current-password" />
+        <button class="btn btn-accent" id="unlockButton">Unlock</button>
+      </div>
+      <div class="unlock-error" id="unlockError" hidden></div>
     </div>
 
-    <div class="retry-banner" id="retryBanner" hidden>
-      <div class="retry-text">
-        <span class="retry-title">Last sync failed</span>
-        <span class="retry-detail" id="retryDetail"></span>
+    <div class="panel panel-danger" id="retryBanner" hidden>
+      <div class="panel-head">
+        <div class="panel-text">
+          <div class="panel-title is-danger">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <path d="M12 9v4M12 17h.01" />
+            </svg>
+            Last sync failed
+          </div>
+          <span class="panel-detail" id="retryDetail"></span>
+        </div>
+        <button class="btn btn-danger" id="retryButton">Retry</button>
       </div>
-      <button class="retry-button" id="retryButton">Retry</button>
+    </div>
+
+    <div class="section-head" id="sectionHead">
+      <span class="section-title">Recent activity</span>
+      <span class="section-count" id="activityCount"></span>
     </div>
 
     <div class="activity-list" id="activityList"></div>
 
     <div class="empty-state" id="emptyState" hidden>
-      <div class="empty-icon">🧩</div>
-      <div class="empty-text">No submissions synced yet.<br />Solve something on LeetCode to get started.</div>
+      <div class="empty-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15V6a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v9" />
+          <path d="M3 9v9a2 2 0 0 0 2 2h12" />
+        </svg>
+      </div>
+      <div class="empty-title">Nothing synced yet</div>
+      <div class="empty-text">Solve a problem on LeetCode and it'll show up here.</div>
     </div>
 
-    <footer>
-      <span class="footer-link" id="openOptionsFooter">Settings</span>
-    </footer>
+    <div class="backfill" id="backfillPanel">
+      <div class="backfill-head">
+        <div class="backfill-text">
+          <div class="backfill-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 3v6h-6" />
+            </svg>
+            Backfill past solves
+          </div>
+          <span class="backfill-detail" id="backfillDetail"></span>
+        </div>
+        <button class="btn btn-ghost" id="backfillButton">Backfill</button>
+      </div>
+      <div class="backfill-progress-track" id="backfillProgressTrack" hidden>
+        <div class="backfill-progress-fill" id="backfillProgressFill" style="width: 0%"></div>
+      </div>
+    </div>
 
+    <script src="crypto-utils.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 const repoLabel = document.getElementById("repoLabel");
 const openOptions = document.getElementById("openOptions");
-const openOptionsFooter = document.getElementById("openOptionsFooter");
+const activityCount = document.getElementById("activityCount");
+const sectionHead = document.getElementById("sectionHead");
 const retryBanner = document.getElementById("retryBanner");
 const retryDetail = document.getElementById("retryDetail");
 const retryButton = document.getElementById("retryButton");
@@ -10,6 +11,10 @@ const backfillDetail = document.getElementById("backfillDetail");
 const backfillButton = document.getElementById("backfillButton");
 const backfillProgressTrack = document.getElementById("backfillProgressTrack");
 const backfillProgressFill = document.getElementById("backfillProgressFill");
+const unlockPanel = document.getElementById("unlockPanel");
+const unlockPassphrase = document.getElementById("unlockPassphrase");
+const unlockButton = document.getElementById("unlockButton");
+const unlockError = document.getElementById("unlockError");
 
 const DIFFICULTY_CLASS = { Easy: "difficulty-easy", Medium: "difficulty-medium", Hard: "difficulty-hard" };
 
@@ -41,6 +46,8 @@ function outcomeText(entry) {
       return `Already synced · ${relativeTime(entry.timestamp)}`;
     case "disabled":
       return `Skipped - failed-attempt syncing is off · ${relativeTime(entry.timestamp)}`;
+    case "locked":
+      return `Token locked - unlock to sync · ${relativeTime(entry.timestamp)}`;
     case "not_configured":
       return "Not configured - open settings";
     default:
@@ -68,7 +75,9 @@ function renderRow(entry) {
   const titleLine = document.createElement("div");
   titleLine.className = "activity-title";
   const titleText = document.createElement("span");
+  titleText.className = "activity-title-text";
   titleText.textContent = entry.title || entry.titleSlug || "Unknown problem";
+  titleText.title = titleText.textContent; // full text on hover, since it ellipsizes
   titleLine.appendChild(titleText);
   if (entry.difficulty && DIFFICULTY_CLASS[entry.difficulty]) {
     const tag = document.createElement("span");
@@ -87,19 +96,33 @@ function renderRow(entry) {
   row.appendChild(main);
 
   if (isLink) {
+    // Icon comes from CSS (mask-image) rather than innerHTML, so this file
+    // stays free of HTML sinks and that property is greppable, not reasoned about.
     const chevron = document.createElement("span");
     chevron.className = "chevron";
-    chevron.textContent = "›";
     row.appendChild(chevron);
   }
 
   return row;
 }
 
+// Mirrors BACKFILL_STALE_MS in background.js - a backfill dies with the tab it
+// runs in, so a lock that stopped heartbeating means it was interrupted.
+const BACKFILL_STALE_MS = 3 * 60 * 1000;
+
 function renderBackfillPanel(backfillStatus) {
   const status = backfillStatus || {};
   backfillProgressTrack.hidden = true;
   backfillDetail.classList.remove("is-error");
+
+  const interrupted = status.running && Date.now() - (status.heartbeatAt || 0) > BACKFILL_STALE_MS;
+  if (interrupted) {
+    backfillButton.disabled = false;
+    backfillButton.textContent = "Resume";
+    backfillDetail.textContent =
+      "Backfill was interrupted (the LeetCode tab was closed or reloaded). Already-synced problems are skipped, so it's safe to run again.";
+    return;
+  }
 
   if (status.running) {
     backfillButton.disabled = true;
@@ -136,8 +159,7 @@ function renderBackfillPanel(backfillStatus) {
       (status.failed ? `, ${status.failed} failed` : "") +
       ` · ${relativeTime(status.finishedAt)}`;
   } else {
-    backfillDetail.textContent =
-      "Pulls every accepted submission from your LeetCode history into this repo - handy if you're migrating from LeetHub or another tool.";
+    backfillDetail.textContent = "Import your accepted submission history.";
   }
 }
 
@@ -153,6 +175,10 @@ async function render() {
 
   repoLabel.textContent = githubRepo || "Not configured";
 
+  const { encryptedToken } = await chrome.storage.local.get("encryptedToken");
+  const { tokenKey } = await chrome.storage.session.get("tokenKey");
+  unlockPanel.hidden = !(encryptedToken && !tokenKey);
+
   if (lastFailedSync) {
     retryBanner.hidden = false;
     retryDetail.textContent = `${lastFailedSync.title || "A submission"} · ${relativeTime(lastFailedSync.timestamp)}`;
@@ -160,11 +186,17 @@ async function render() {
     retryBanner.hidden = true;
   }
 
-  activityList.innerHTML = "";
+  activityCount.textContent = activityLog.length ? `${activityLog.length} recent` : "";
+
+  activityList.replaceChildren();
   if (activityLog.length === 0) {
+    // The empty state says "nothing synced yet" on its own; a section header
+    // above it would just be a label for a list that isn't there.
+    sectionHead.hidden = true;
     emptyState.hidden = false;
     activityList.hidden = true;
   } else {
+    sectionHead.hidden = false;
     emptyState.hidden = true;
     activityList.hidden = false;
     activityLog.forEach((entry) => activityList.appendChild(renderRow(entry)));
@@ -172,7 +204,6 @@ async function render() {
 }
 
 openOptions.addEventListener("click", () => chrome.runtime.openOptionsPage());
-openOptionsFooter.addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 retryButton.addEventListener("click", async () => {
   retryButton.disabled = true;
@@ -207,11 +238,53 @@ backfillButton.addEventListener("click", async () => {
   }
 });
 
+async function attemptUnlock() {
+  const passphrase = unlockPassphrase.value;
+  if (!passphrase) return;
+
+  unlockButton.disabled = true;
+  unlockButton.textContent = "Unlocking...";
+  unlockError.hidden = true;
+
+  try {
+    const { encryptedToken } = await chrome.storage.local.get("encryptedToken");
+    if (!encryptedToken) return;
+
+    const keyB64 = await LcgsCrypto.deriveKeyB64(passphrase, encryptedToken);
+    // AES-GCM is authenticated, so this throwing IS the wrong-passphrase check.
+    // Never persist a key we haven't proven decrypts the token.
+    await LcgsCrypto.decryptToken(encryptedToken, keyB64);
+
+    await chrome.storage.session.set({ tokenKey: keyB64 });
+    unlockPassphrase.value = "";
+    await render();
+  } catch (err) {
+    unlockError.textContent = "That passphrase didn't work.";
+    unlockError.hidden = false;
+  } finally {
+    unlockButton.disabled = false;
+    unlockButton.textContent = "Unlock";
+  }
+}
+
+unlockButton.addEventListener("click", attemptUnlock);
+unlockPassphrase.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") attemptUnlock();
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (
     area === "local" &&
-    (changes.activityLog || changes.lastFailedSync || changes.githubRepo || changes.backfillStatus)
+    (changes.activityLog ||
+      changes.lastFailedSync ||
+      changes.githubRepo ||
+      changes.backfillStatus ||
+      changes.encryptedToken)
   ) {
+    render();
+  }
+  // Locking/unlocking happens in session storage, not local.
+  if (area === "session" && changes.tokenKey) {
     render();
   }
 });

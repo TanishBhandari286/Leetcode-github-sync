@@ -1,6 +1,8 @@
 // Owns all GitHub API calls. The content script never touches the PAT directly —
 // it sends a structured payload here via chrome.runtime.sendMessage.
 
+importScripts("crypto-utils.js");
+
 const PLATFORM_TOTALS_CACHE_MS = 24 * 60 * 60 * 1000;
 const ALL_QUESTIONS_COUNT_QUERY = "query { allQuestionsCount { difficulty count } }";
 
@@ -28,6 +30,44 @@ function escapeMarkdownCell(str) {
 
 function escapeMarkdownLinkText(str) {
   return escapeMarkdownCell(str).replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+// Real LeetCode slugs are lowercase alphanumerics and hyphens. Everything else
+// is either a malformed URL or something hostile, and it must not reach the
+// repo: the slug lands in a Markdown link target, in the `<!-- id:... -->`
+// marker used to find a problem's existing row, and in the committed file
+// path. A slug carrying ")" closes the link early, one carrying "-->" closes
+// the comment and lets the rest render as live HTML, and one carrying "/" or
+// ".." walks the write out of its intended folder. Stripping to the known-safe
+// charset is a no-op for every genuine slug, so this costs nothing in practice.
+function sanitizeSlug(slug) {
+  return String(slug ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+// Same idea for the problem number, which is only ever digits.
+function sanitizeFrontendId(id) {
+  return String(id ?? "").replace(/[^0-9]/g, "");
+}
+
+// GitHub's contents API takes the file path in the URL, so each segment has to
+// be encoded - the separators must survive, everything inside them must not.
+function encodeRepoPath(path) {
+  return String(path)
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+// Keys that would reach through a plain object into Object.prototype. These
+// come from LeetCode's API rather than an attacker directly, but they are used
+// as object keys unchecked, and the blast radius (every object in the worker)
+// is far worse than the cost of rejecting them.
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function isSafeObjectKey(key) {
+  return typeof key === "string" && key.length > 0 && !UNSAFE_OBJECT_KEYS.has(key);
 }
 
 // LeetCode's per-difficulty question counts, used as the ring denominators
@@ -149,15 +189,38 @@ function setBadge(text, color) {
   if (color) chrome.action.setBadgeBackgroundColor({ color });
 }
 
+// With the passphrase lock off, the token sits in local storage as before.
+// With it on, only ciphertext is on disk and the key lives in session storage
+// (memory-only, cleared on browser restart) - so "locked" is the normal state
+// after every restart until the user unlocks from the popup.
+async function resolveGithubToken() {
+  const { githubToken, encryptedToken } = await chrome.storage.local.get(["githubToken", "encryptedToken"]);
+  if (!encryptedToken) return { token: githubToken, locked: false };
+
+  const { tokenKey } = await chrome.storage.session.get("tokenKey");
+  if (!tokenKey) return { token: null, locked: true };
+
+  try {
+    return { token: await LcgsCrypto.decryptToken(encryptedToken, tokenKey), locked: false };
+  } catch (err) {
+    // A key that no longer decrypts means the passphrase was changed elsewhere
+    // (or the record was replaced) - drop it and make the user unlock again.
+    console.warn("[LeetCode->GitHub] stored key no longer decrypts the token, re-locking", err);
+    await chrome.storage.session.remove("tokenKey");
+    return { token: null, locked: true };
+  }
+}
+
 async function getSettings() {
-  const { githubToken, githubRepo, basePath, syncFailedAttempts } = await chrome.storage.local.get([
-    "githubToken",
+  const { githubRepo, basePath, syncFailedAttempts } = await chrome.storage.local.get([
     "githubRepo",
     "basePath",
     "syncFailedAttempts",
   ]);
+  const { token, locked } = await resolveGithubToken();
   return {
-    githubToken,
+    githubToken: token,
+    locked,
     githubRepo,
     basePath: basePath || "problems",
     // Defaults to true (existing behavior) - only off if the user explicitly unchecked it.
@@ -287,7 +350,7 @@ async function withRetry(fn, label) {
 }
 
 async function getFile(token, repo, path) {
-  const response = await githubRequest(token, `/repos/${repo}/contents/${path}`);
+  const response = await githubRequest(token, `/repos/${repo}/contents/${encodeRepoPath(path)}`);
   if (response.status === 404) return null;
   const json = await response.json();
   return { content: fromBase64(json.content), sha: json.sha };
@@ -296,7 +359,7 @@ async function getFile(token, repo, path) {
 async function putFile(token, repo, path, content, message, sha) {
   const body = { message, content: toBase64(content) };
   if (sha) body.sha = sha;
-  await githubRequest(token, `/repos/${repo}/contents/${path}`, {
+  await githubRequest(token, `/repos/${repo}/contents/${encodeRepoPath(path)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -311,20 +374,28 @@ async function updateStats(payload) {
     topicsRecorded = {},
   } = await chrome.storage.local.get(["stats", "solvedProblems", "topicCounts", "topicsRecorded"]);
   const difficulty = payload.difficulty;
+  // Difficulty is the key for both the stats object and the ring denominators,
+  // and LeetCode only ever has these three - anything else is bad data and
+  // would silently distort the charts, so it doesn't get recorded at all.
+  if (!DIFFICULTY_ORDER.includes(difficulty)) {
+    console.warn("[LeetCode->GitHub] unrecognised difficulty, not recording stats for it", difficulty);
+    return { stats, solvedProblems, topicCounts };
+  }
+  const safeSlug = sanitizeSlug(payload.titleSlug);
   if (!stats[difficulty]) stats[difficulty] = { accepted: 0, total: 0 };
 
   stats[difficulty].total += 1;
   if (payload.statusDisplay === "Accepted") {
     stats[difficulty].accepted += 1;
-    solvedProblems[payload.titleSlug] = difficulty;
+    solvedProblems[safeSlug] = difficulty;
 
     // Tracked separately from solvedProblems (and keyed by its own flag, not
     // by "already solved") so a problem solved before this feature existed
     // still gets its topics backfilled the next time it's (re-)submitted -
     // and a later resolve of the same problem never double-counts it.
-    if (!topicsRecorded[payload.titleSlug]) {
-      topicsRecorded[payload.titleSlug] = true;
-      (payload.topicTags || []).forEach((tag) => {
+    if (!topicsRecorded[safeSlug]) {
+      topicsRecorded[safeSlug] = true;
+      (payload.topicTags || []).filter(isSafeObjectKey).forEach((tag) => {
         topicCounts[tag] = (topicCounts[tag] || 0) + 1;
       });
     }
@@ -544,15 +615,20 @@ async function commitTopicsSvg(token, repo, topicCounts) {
   await putFile(token, repo, TOPICS_SVG_PATH, svg, "Update topics breakdown", existing?.sha);
 }
 
+function indexRowMarker(titleSlug) {
+  return `<!-- id:${sanitizeSlug(titleSlug)} -->`;
+}
+
 function buildIndexRow(payload, finalStatus) {
-  const link = `https://leetcode.com/problems/${payload.titleSlug}/`;
+  const slug = sanitizeSlug(payload.titleSlug);
+  const link = `https://leetcode.com/problems/${encodeURIComponent(slug)}/`;
   const title = escapeMarkdownLinkText(payload.title);
   const tags = (payload.topicTags || []).map(escapeMarkdownCell).join(", ");
   const difficulty = escapeMarkdownCell(payload.difficulty ?? "");
   const statusLabel = finalStatus === "Accepted" ? "✅ Accepted" : `⏳ ${escapeMarkdownCell(finalStatus)}`;
   return (
-    `| ${payload.questionFrontendId ?? ""} | [${title}](${link}) | ` +
-    `${difficulty} | ${tags} | ${statusLabel} |<!-- id:${payload.titleSlug} -->`
+    `| ${sanitizeFrontendId(payload.questionFrontendId)} | [${title}](${link}) | ` +
+    `${difficulty} | ${tags} | ${statusLabel} |${indexRowMarker(slug)}`
   );
 }
 
@@ -562,7 +638,7 @@ function buildIndexRow(payload, finalStatus) {
 // this feature, or one that was never generated by this extension at all.
 async function updateIndex(token, repo, payload) {
   const existing = await getFile(token, repo, README_PATH);
-  const marker = `<!-- id:${payload.titleSlug} -->`;
+  const marker = indexRowMarker(payload.titleSlug);
   let finalStatus = payload.statusDisplay;
   let lines = existing ? existing.content.split("\n") : [];
 
@@ -629,7 +705,21 @@ async function syncSubmission(payload) {
     return { ok: true, skipped: true };
   }
 
-  const { githubToken, githubRepo, basePath, syncFailedAttempts } = await getSettings();
+  const { githubToken, githubRepo, basePath, syncFailedAttempts, locked } = await getSettings();
+  if (locked) {
+    setBadge("🔒", "#c0392b");
+    chrome.action.setTitle({ title: "LeetCode to GitHub Sync: locked - unlock to sync" });
+    console.warn("[LeetCode->GitHub] token is locked - unlock from the extension popup");
+    await logActivity({ ...activityBase(payload), outcome: "locked" });
+    // Parked in the same slot the retry button already drains, so unlocking
+    // and hitting Retry replays this submission instead of losing it.
+    await setLastFailedSync({
+      payload,
+      title: payload.title,
+      errorMessage: "Token is locked - unlock in the popup, then retry",
+    });
+    return { ok: false, reason: "locked" };
+  }
   if (!githubToken || !githubRepo) {
     setBadge("!", "#c0392b");
     chrome.action.setTitle({ title: "LeetCode to GitHub Sync: not configured - open options" });
@@ -644,10 +734,17 @@ async function syncSubmission(payload) {
     return { ok: true, skipped: true, reason: "failed_sync_disabled" };
   }
 
-  const attemptNumber = await peekNextAttemptNumber(payload.titleSlug);
+  const safeSlug = sanitizeSlug(payload.titleSlug);
+  if (!safeSlug) {
+    console.warn("[LeetCode->GitHub] refusing to sync a submission with an unusable slug", payload.titleSlug);
+    await logActivity({ ...activityBase(payload), outcome: "failed", errorMessage: "Unrecognised problem slug" });
+    return { ok: false, reason: "invalid_slug" };
+  }
+
+  const attemptNumber = await peekNextAttemptNumber(safeSlug);
   const statusSlug = slugifyStatus(payload.statusDisplay);
   const extension = fileExtensionFor(payload.lang);
-  const problemFolder = `${basePath}/${payload.questionFrontendId ?? "0"}-${payload.titleSlug}`;
+  const problemFolder = `${basePath}/${sanitizeFrontendId(payload.questionFrontendId) || "0"}-${safeSlug}`;
   const filePath = `${problemFolder}/attempt-${attemptNumber}-${statusSlug}.${extension}`;
   const commitMessage = `${payload.statusDisplay}: ${payload.title} (attempt ${attemptNumber})`;
 
@@ -656,7 +753,7 @@ async function syncSubmission(payload) {
       () => commitAttemptFile(githubToken, githubRepo, filePath, payload.code, commitMessage),
       "commit attempt file"
     );
-    await commitAttemptNumber(payload.titleSlug, attemptNumber);
+    await commitAttemptNumber(safeSlug, attemptNumber);
     await markSynced(payload.submissionId);
     console.log("[LeetCode->GitHub] synced", filePath);
 
@@ -707,6 +804,16 @@ async function retryLastFailedSync() {
   return syncSubmission(lastFailedSync.payload);
 }
 
+// A running backfill heartbeats on every progress write. The widest legitimate
+// gap between two writes is one cooldown plus a worst-case run of LeetCode and
+// GitHub retry backoffs, which lands around a minute - so a lock older than
+// this means the tab it was running in is gone, not that it's still working.
+const BACKFILL_STALE_MS = 3 * 60 * 1000;
+
+function isBackfillStale(status) {
+  return Date.now() - (status?.heartbeatAt ?? 0) > BACKFILL_STALE_MS;
+}
+
 // The actual history fetch + per-submission sync loop lives in content.js -
 // it runs in LeetCode's own page context, which is what lets it read the
 // session cookie needed for LeetCode's submissions API and GraphQL endpoint.
@@ -715,7 +822,7 @@ async function retryLastFailedSync() {
 // which the popup listens to directly.
 async function startBackfill() {
   const { backfillStatus } = await chrome.storage.local.get("backfillStatus");
-  if (backfillStatus?.running) {
+  if (backfillStatus?.running && !isBackfillStale(backfillStatus)) {
     return { ok: false, reason: "already_running" };
   }
 

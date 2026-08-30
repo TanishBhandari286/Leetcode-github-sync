@@ -306,9 +306,16 @@ async function fetchSubmissionHistoryPage(offset, limit) {
   return response.json();
 }
 
+// Every write stamps a heartbeat. A backfill lives in this content script, so
+// closing the tab, navigating away, or reloading the extension kills it
+// mid-run with no chance to clear `running` - without a heartbeat to age the
+// lock out, that would leave the popup stuck on "Running..." forever with no
+// way to start another backfill short of wiping storage.
 async function patchBackfillStatus(patch) {
   const { backfillStatus } = await chrome.storage.local.get("backfillStatus");
-  await chrome.storage.local.set({ backfillStatus: { ...backfillStatus, ...patch } });
+  await chrome.storage.local.set({
+    backfillStatus: { ...backfillStatus, ...patch, heartbeatAt: Date.now() },
+  });
 }
 
 async function collectAcceptedSubmissions() {

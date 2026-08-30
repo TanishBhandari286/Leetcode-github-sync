@@ -5,12 +5,14 @@
     <title>LeetCode to GitHub Sync — Settings</title>
     <style>
       :root {
-        --bg: #0d1117;
-        --surface: #161b22;
-        --border: #30363d;
-        --border-focus: #58a6ff;
+        --bg: #0b0f14;
+        --surface: #131a22;
+        --surface-2: #0f151c;
+        --border: #232c38;
+        --border-strong: #2f3a49;
         --text: #e6edf3;
-        --text-muted: #8b949e;
+        --text-muted: #8b98a9;
+        --text-dim: #66717f;
         --success: #3fb950;
         --fail: #f85149;
         --accent: #58a6ff;
@@ -21,6 +23,12 @@
         box-sizing: border-box;
       }
 
+      /* Explicit: an author rule setting `display` beats the browser's
+         default [hidden] rule at equal specificity. */
+      [hidden] {
+        display: none !important;
+      }
+
       html,
       body {
         margin: 0;
@@ -28,102 +36,149 @@
         background: var(--bg);
         color: var(--text);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
 
       body {
         display: flex;
         justify-content: center;
-        padding: 48px 20px;
+        padding: 44px 20px 64px;
       }
 
-      .card {
+      .shell {
         width: 100%;
-        max-width: 460px;
+        max-width: 540px;
       }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* ---------- header ---------- */
 
       .brand {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 28px;
+        gap: 13px;
+        margin-bottom: 26px;
       }
 
       .brand-icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 10px;
+        width: 40px;
+        height: 40px;
+        border-radius: 11px;
         background: linear-gradient(135deg, var(--easy), var(--accent));
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
         flex-shrink: 0;
+        color: #04101c;
+        box-shadow: 0 3px 12px rgba(0, 184, 163, 0.25);
       }
 
       .brand-title {
         font-size: 17px;
-        font-weight: 600;
+        font-weight: 650;
+        letter-spacing: -0.015em;
       }
 
       .brand-subtitle {
         font-size: 12.5px;
         color: var(--text-muted);
-        margin-top: 1px;
+        margin-top: 2px;
       }
 
-      .field {
-        margin-bottom: 22px;
+      /* ---------- sections ---------- */
+
+      .section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+
+      .section-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 16px;
+      }
+
+      .field + .field {
+        margin-top: 18px;
       }
 
       label {
         display: block;
-        font-size: 13px;
+        font-size: 12.5px;
         font-weight: 600;
-        margin-bottom: 8px;
+        margin-bottom: 7px;
       }
 
-      input {
+      input[type="text"],
+      input[type="password"] {
         width: 100%;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 9px;
         color: var(--text);
         padding: 10px 12px;
-        font-size: 13.5px;
+        font-size: 13px;
         font-family: inherit;
-        outline: none;
         transition: border-color 0.15s, box-shadow 0.15s;
       }
 
-      input::placeholder {
-        color: #6e7681;
+      input[type="text"]::placeholder,
+      input[type="password"]::placeholder {
+        color: var(--text-dim);
       }
 
-      input:focus {
-        border-color: var(--border-focus);
-        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+      input[type="text"]:focus,
+      input[type="password"]:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.13);
       }
 
       .hint {
-        font-size: 12px;
+        font-size: 11.5px;
         color: var(--text-muted);
-        margin-top: 8px;
         line-height: 1.5;
+        margin-top: 7px;
       }
 
-      .hint code {
-        background: var(--surface);
+      code {
+        background: var(--surface-2);
         border: 1px solid var(--border);
-        border-radius: 4px;
+        border-radius: 5px;
         padding: 1px 5px;
-        font-size: 11.5px;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--text);
+        white-space: nowrap;
       }
+
+      /* ---------- toggle rows ---------- */
 
       .toggle-row {
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
-        gap: 16px;
+        gap: 18px;
+      }
+
+      .toggle-row + .toggle-row {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+      }
+
+      .toggle-text {
+        min-width: 0;
       }
 
       .toggle-text label {
@@ -131,159 +186,252 @@
       }
 
       .toggle-text .hint {
-        margin-top: 2px;
+        margin-top: 0;
       }
 
       .switch {
         position: relative;
-        display: inline-block;
-        width: 40px;
-        height: 22px;
         flex-shrink: 0;
-        cursor: pointer;
-        margin-top: 2px;
+        width: 40px;
+        height: 23px;
+        margin-top: 1px;
       }
 
       .switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
         position: absolute;
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        cursor: pointer;
+        z-index: 1;
       }
 
       .switch-track {
         position: absolute;
         inset: 0;
-        background: var(--surface);
-        border: 1px solid var(--border);
+        background: #2a3340;
         border-radius: 999px;
-        transition: background 0.15s, border-color 0.15s;
+        transition: background 0.18s;
       }
 
       .switch-thumb {
         position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 16px;
-        height: 16px;
-        background: var(--text-muted);
+        top: 3px;
+        left: 3px;
+        width: 17px;
+        height: 17px;
         border-radius: 50%;
-        transition: transform 0.15s, background 0.15s;
+        background: #8b98a9;
+        transition: transform 0.18s, background 0.18s;
       }
 
       .switch input:checked + .switch-track {
-        background: rgba(0, 184, 163, 0.25);
-        border-color: var(--easy);
+        background: rgba(0, 184, 163, 0.28);
       }
 
       .switch input:checked + .switch-track .switch-thumb {
-        transform: translateX(18px);
+        transform: translateX(17px);
         background: var(--easy);
       }
 
       .switch input:focus-visible + .switch-track {
-        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.25);
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
       }
 
-      button {
+      /* ---------- nested reveal ---------- */
+
+      .subfields {
+        margin-top: 16px;
+        padding: 16px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      /* ---------- callout ---------- */
+
+      .callout {
+        display: flex;
+        gap: 9px;
+        margin-top: 10px;
+        padding: 9px 11px;
+        background: rgba(255, 192, 30, 0.07);
+        border: 1px solid rgba(255, 192, 30, 0.25);
+        border-radius: 8px;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: var(--text-muted);
+      }
+
+      .callout svg {
+        flex-shrink: 0;
+        margin-top: 1px;
+        color: #ffc01e;
+      }
+
+      /* ---------- save ---------- */
+
+      button#save {
         width: 100%;
         background: linear-gradient(135deg, var(--easy), var(--accent));
-        color: #06121f;
+        color: #04101c;
         border: none;
-        border-radius: 8px;
-        padding: 11px 16px;
-        font-size: 14px;
+        border-radius: 10px;
+        padding: 13px;
+        font-size: 13.5px;
         font-weight: 700;
+        font-family: inherit;
         cursor: pointer;
-        transition: opacity 0.15s, transform 0.05s;
+        transition: opacity 0.15s, transform 0.08s;
+        box-shadow: 0 4px 14px rgba(0, 184, 163, 0.18);
       }
 
-      button:hover {
+      button#save:hover:not(:disabled) {
         opacity: 0.92;
       }
 
-      button:active {
-        transform: scale(0.99);
+      button#save:active:not(:disabled) {
+        transform: translateY(1px);
       }
 
-      button:disabled {
-        opacity: 0.5;
+      button#save:disabled {
+        opacity: 0.55;
         cursor: default;
+        box-shadow: none;
       }
 
       #status {
-        margin-top: 16px;
-        padding: 10px 12px;
-        border-radius: 8px;
+        display: none;
+        margin-top: 14px;
+        padding: 11px 13px;
+        border-radius: 9px;
         font-size: 12.5px;
         line-height: 1.5;
-        display: none;
       }
 
       #status.visible {
         display: block;
       }
 
+      #status.info {
+        background: rgba(88, 166, 255, 0.09);
+        border: 1px solid rgba(88, 166, 255, 0.3);
+        color: var(--accent);
+      }
+
       #status.ok {
-        color: var(--success);
         background: rgba(63, 185, 80, 0.1);
         border: 1px solid rgba(63, 185, 80, 0.35);
+        color: var(--success);
       }
 
       #status.error {
-        color: var(--fail);
         background: rgba(248, 81, 73, 0.1);
         border: 1px solid rgba(248, 81, 73, 0.35);
+        color: var(--fail);
+        word-break: break-word;
       }
     </style>
   </head>
   <body>
-    <div class="card">
+    <div class="shell">
       <div class="brand">
-        <div class="brand-icon">🔗</div>
+        <div class="brand-icon">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        </div>
         <div>
           <div class="brand-title">LeetCode to GitHub Sync</div>
-          <div class="brand-subtitle">Connect your GitHub repo to start syncing submissions</div>
+          <div class="brand-subtitle">Connect a repo to start syncing your submissions</div>
         </div>
       </div>
 
-      <div class="field">
-        <label for="token">GitHub Personal Access Token</label>
-        <input id="token" type="password" placeholder="github_pat_..." autocomplete="off" />
-        <div class="hint">
-          Use a token scoped to just the target repo with <code>Contents: Read and write</code> permission
-          (fine-grained), or the classic <code>repo</code> scope.
-        </div>
-      </div>
+      <div class="section">
+        <div class="section-label">GitHub connection</div>
 
-      <div class="field">
-        <label for="repo">Target repo</label>
-        <input id="repo" type="text" placeholder="your-username/leetcode-solutions" />
-      </div>
-
-      <div class="field">
-        <label for="basePath">Base folder (optional)</label>
-        <input id="basePath" type="text" placeholder="problems" />
-      </div>
-
-      <div class="field toggle-row">
-        <div class="toggle-text">
-          <label for="syncFailedAttempts">Sync failed submissions</label>
+        <div class="field">
+          <label for="token">Personal access token</label>
+          <input id="token" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off" />
           <div class="hint">
-            Also commit Wrong Answer, TLE, and other non-Accepted attempts. Turn off to only sync Accepted
-            solutions.
+            A classic token with the <code>repo</code> scope, or a fine-grained one limited to your target repo
+            with <code>Contents: Read and write</code>.
           </div>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="syncFailedAttempts" checked />
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-        </label>
+
+        <div class="field">
+          <label for="repo">Target repo</label>
+          <input id="repo" type="text" placeholder="your-username/your-repo" />
+        </div>
+
+        <div class="field">
+          <label for="basePath">Base folder <span style="color: var(--text-dim); font-weight: 400">— optional</span></label>
+          <input id="basePath" type="text" placeholder="problems" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Sync</div>
+
+        <div class="toggle-row">
+          <div class="toggle-text">
+            <label for="syncFailedAttempts">Sync failed submissions</label>
+            <div class="hint">Also commit Wrong Answer, TLE, and other non-Accepted attempts.</div>
+            <div class="callout">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v4M12 16h.01" />
+              </svg>
+              <span>If your repo is public, your failed attempts are public too.</span>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="syncFailedAttempts" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Security</div>
+
+        <div class="toggle-row">
+          <div class="toggle-text">
+            <label for="encryptToken">Protect token with a passphrase</label>
+            <div class="hint">
+              Encrypts your token on disk with AES-GCM instead of storing it in the clear. You'll unlock once
+              per browser restart — the key stays in memory and never touches disk.
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="encryptToken" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </div>
+
+        <div class="subfields" id="passphraseFields" hidden>
+          <div class="field">
+            <label for="passphrase">Passphrase</label>
+            <input id="passphrase" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+          </div>
+          <div class="field">
+            <label for="passphraseConfirm">Confirm passphrase</label>
+            <input id="passphraseConfirm" type="password" autocomplete="new-password" />
+            <div class="hint">
+              There's no recovery — if you forget it, paste a fresh token and set a new one.
+            </div>
+          </div>
+        </div>
       </div>
 
       <button id="save">Validate &amp; Save</button>
       <div id="status"></div>
     </div>
 
+    <script src="crypto-utils.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
