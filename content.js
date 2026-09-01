@@ -101,7 +101,11 @@ async function getQuestionMeta(titleSlug) {
     return questionMetaCache.get(titleSlug);
   }
   const data = await graphqlRequest(QUESTION_META_QUERY, { titleSlug });
-  questionMetaCache.set(titleSlug, data.question);
+  // Only cache a real answer. LeetCode returns a 200 with `question: null`
+  // under load, and caching that would pin the problem to "no difficulty" for
+  // the rest of the page's life - which during a backfill means every later
+  // submission for it silently misses the stats charts.
+  if (data.question) questionMetaCache.set(titleSlug, data.question);
   return data.question;
 }
 

@@ -5,6 +5,18 @@ importScripts("crypto-utils.js");
 
 const PLATFORM_TOTALS_CACHE_MS = 24 * 60 * 60 * 1000;
 const ALL_QUESTIONS_COUNT_QUERY = "query { allQuestionsCount { difficulty count } }";
+const QUESTION_META_QUERY = `
+  query questionMeta($titleSlug: String!) {
+    question(titleSlug: $titleSlug) {
+      questionFrontendId
+      title
+      difficulty
+      topicTags {
+        name
+      }
+    }
+  }
+`;
 
 // Problem titles and topic tags come from LeetCode's API, not directly from
 // an attacker - but they still end up embedded in generated SVG/Markdown, so
@@ -366,43 +378,165 @@ async function putFile(token, repo, path, content, message, sha) {
   });
 }
 
-async function updateStats(payload) {
+// The content script normally supplies difficulty and topic tags, but that
+// fetch is best-effort and goes quiet on a rate limit - during a backfill it
+// fails often enough to matter. Without a difficulty a submission can't reach
+// the charts at all (they're keyed by it), so re-fetch it here as a fallback.
+// A problem's metadata never changes, so successes are cached indefinitely;
+// failures are not cached, so the next submission tries again.
+async function fetchQuestionMeta(titleSlug) {
+  const response = await fetch("https://leetcode.com/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: QUESTION_META_QUERY, variables: { titleSlug } }),
+  });
+  if (!response.ok) throw new Error(`LeetCode GraphQL returned ${response.status}`);
+  const json = await response.json();
+  if (json.errors) throw new Error(json.errors.map((e) => e.message).join("; "));
+  return json?.data?.question || null;
+}
+
+async function getQuestionMeta(titleSlug) {
+  // Callers sanitise the slug, but it lands here as an object key - keeping
+  // the guard local means that stays safe if a new caller ever appears.
+  if (!isSafeObjectKey(titleSlug)) return null;
+
+  const { questionMeta = {} } = await chrome.storage.local.get("questionMeta");
+  if (questionMeta[titleSlug]) return questionMeta[titleSlug];
+
+  let meta;
+  try {
+    meta = await fetchQuestionMeta(titleSlug);
+  } catch (err) {
+    console.warn("[LeetCode->GitHub] could not fetch question metadata for", titleSlug, err);
+    return null;
+  }
+  // A record without a usable difficulty is the exact thing this exists to
+  // supply, so don't cache one - that would make the gap permanent.
+  if (!meta || !DIFFICULTY_ORDER.includes(meta.difficulty)) return null;
+
+  questionMeta[titleSlug] = {
+    questionFrontendId: meta.questionFrontendId ?? null,
+    title: meta.title ?? null,
+    difficulty: meta.difficulty,
+    topicTags: (meta.topicTags || []).map((tag) => tag.name),
+  };
+  await chrome.storage.local.set({ questionMeta });
+  return questionMeta[titleSlug];
+}
+
+// Returns a filled-in copy rather than mutating: the caller's payload object
+// is what gets parked in lastFailedSync for the retry button.
+async function enrichPayload(payload) {
+  if (payload.difficulty && (payload.topicTags || []).length > 0) return payload;
+  const safeSlug = sanitizeSlug(payload.titleSlug);
+  if (!safeSlug) return payload;
+
+  const meta = await getQuestionMeta(safeSlug);
+  if (!meta) return payload;
+
+  return {
+    ...payload,
+    difficulty: payload.difficulty || meta.difficulty,
+    topicTags: (payload.topicTags || []).length > 0 ? payload.topicTags : meta.topicTags,
+    // Backfill falls back to the slug as a title, so treat that as "missing".
+    title: payload.title && payload.title !== payload.titleSlug ? payload.title : meta.title || payload.title,
+    questionFrontendId: payload.questionFrontendId ?? meta.questionFrontendId,
+  };
+}
+
+async function readStatsState() {
   const {
     stats = {},
     solvedProblems = {},
     topicCounts = {},
     topicsRecorded = {},
   } = await chrome.storage.local.get(["stats", "solvedProblems", "topicCounts", "topicsRecorded"]);
+  return { stats, solvedProblems, topicCounts, topicsRecorded };
+}
+
+async function writeStatsState(state) {
+  await chrome.storage.local.set({
+    stats: state.stats,
+    solvedProblems: state.solvedProblems,
+    topicCounts: state.topicCounts,
+    topicsRecorded: state.topicsRecorded,
+  });
+}
+
+// Problem-keyed facts, deliberately split from the attempt counters below:
+// these are idempotent, so they can be safely re-applied to repair a problem
+// whose stats were lost the first time round. Returns whether anything moved.
+function applySolvedFacts(state, payload, difficulty) {
+  const safeSlug = sanitizeSlug(payload.titleSlug);
+  let changed = false;
+
+  if (state.solvedProblems[safeSlug] !== difficulty) {
+    state.solvedProblems[safeSlug] = difficulty;
+    changed = true;
+  }
+
+  // Tracked separately from solvedProblems (and keyed by its own flag, not
+  // by "already solved") so a problem solved before this feature existed
+  // still gets its topics backfilled the next time it's (re-)submitted -
+  // and a later resolve of the same problem never double-counts it.
+  if (!state.topicsRecorded[safeSlug]) {
+    state.topicsRecorded[safeSlug] = true;
+    (payload.topicTags || []).filter(isSafeObjectKey).forEach((tag) => {
+      state.topicCounts[tag] = (state.topicCounts[tag] || 0) + 1;
+    });
+    changed = true;
+  }
+
+  return changed;
+}
+
+async function updateStats(payload) {
+  const state = await readStatsState();
   const difficulty = payload.difficulty;
   // Difficulty is the key for both the stats object and the ring denominators,
   // and LeetCode only ever has these three - anything else is bad data and
   // would silently distort the charts, so it doesn't get recorded at all.
   if (!DIFFICULTY_ORDER.includes(difficulty)) {
     console.warn("[LeetCode->GitHub] unrecognised difficulty, not recording stats for it", difficulty);
-    return { stats, solvedProblems, topicCounts };
+    return { ...state, changed: false };
   }
-  const safeSlug = sanitizeSlug(payload.titleSlug);
-  if (!stats[difficulty]) stats[difficulty] = { accepted: 0, total: 0 };
 
-  stats[difficulty].total += 1;
+  if (!state.stats[difficulty]) state.stats[difficulty] = { accepted: 0, total: 0 };
+  // Attempt counters are increment-based, so this must only ever run for a
+  // submission that is genuinely new - hence the dedup check upstream.
+  state.stats[difficulty].total += 1;
   if (payload.statusDisplay === "Accepted") {
-    stats[difficulty].accepted += 1;
-    solvedProblems[safeSlug] = difficulty;
-
-    // Tracked separately from solvedProblems (and keyed by its own flag, not
-    // by "already solved") so a problem solved before this feature existed
-    // still gets its topics backfilled the next time it's (re-)submitted -
-    // and a later resolve of the same problem never double-counts it.
-    if (!topicsRecorded[safeSlug]) {
-      topicsRecorded[safeSlug] = true;
-      (payload.topicTags || []).filter(isSafeObjectKey).forEach((tag) => {
-        topicCounts[tag] = (topicCounts[tag] || 0) + 1;
-      });
-    }
+    state.stats[difficulty].accepted += 1;
+    applySolvedFacts(state, payload, difficulty);
   }
 
-  await chrome.storage.local.set({ stats, solvedProblems, topicCounts, topicsRecorded });
-  return { stats, solvedProblems, topicCounts };
+  await writeStatsState(state);
+  return { ...state, changed: true };
+}
+
+// Repair path for a submission that was committed but never counted, because
+// its metadata was missing at the time. The dedup check alone used to make
+// that permanent: re-running a backfill skipped the submission before the
+// charts were ever touched. Only the idempotent facts are replayed here -
+// replaying the attempt counters would double-count.
+async function reconcileStats(payload) {
+  if (!DIFFICULTY_ORDER.includes(payload.difficulty) || payload.statusDisplay !== "Accepted") return null;
+  const state = await readStatsState();
+  if (!applySolvedFacts(state, payload, payload.difficulty)) return null;
+
+  // applySolvedFacts only reports a change the first time a problem is
+  // recovered, so this credits each recovered problem exactly one accepted
+  // attempt. It undercounts problems that took several tries - the failed
+  // ones aren't knowable from here - but that beats a card that claims more
+  // problems solved than submissions accepted.
+  if (!state.stats[payload.difficulty]) state.stats[payload.difficulty] = { accepted: 0, total: 0 };
+  state.stats[payload.difficulty].accepted += 1;
+  state.stats[payload.difficulty].total += 1;
+
+  await writeStatsState(state);
+  console.log("[LeetCode->GitHub] recovered missing stats for", payload.titleSlug);
+  return state;
 }
 
 const CARD_BG = "#0d1117";
@@ -609,6 +743,25 @@ function buildTopicsSvg(topicCounts) {
   );
 }
 
+// Chart failures must never fail the sync itself - the solution file is
+// already committed by this point, and a missing chart is cosmetic.
+async function commitStatsCharts(token, repo, state) {
+  try {
+    const platformTotals = await getPlatformTotals();
+    await withRetry(
+      () => commitStatsSvg(token, repo, state.stats, state.solvedProblems, platformTotals),
+      "stats svg update"
+    );
+  } catch (err) {
+    console.error("[LeetCode->GitHub] stats svg update failed", err);
+  }
+  try {
+    await withRetry(() => commitTopicsSvg(token, repo, state.topicCounts), "topics svg update");
+  } catch (err) {
+    console.error("[LeetCode->GitHub] topics svg update failed", err);
+  }
+}
+
 async function commitTopicsSvg(token, repo, topicCounts) {
   const svg = buildTopicsSvg(topicCounts);
   const existing = await getFile(token, repo, TOPICS_SVG_PATH);
@@ -698,10 +851,37 @@ function activityBase(payload) {
   };
 }
 
+// Runs on the skip path, so it stays quiet: a duplicate submission must never
+// become a user-visible failure just because the repair didn't work out.
+async function repairStatsForSyncedSubmission(payload) {
+  try {
+    const { githubToken, githubRepo, locked } = await getSettings();
+    if (locked || !githubToken || !githubRepo) return;
+
+    const enriched = await enrichPayload(payload);
+    const state = await reconcileStats(enriched);
+    if (!state) return;
+
+    // The index row written during the outage is missing exactly the fields
+    // the charts were, so rewrite it from the recovered metadata as well.
+    try {
+      await withRetry(() => updateIndex(githubToken, githubRepo, enriched), "index repair");
+    } catch (err) {
+      console.error("[LeetCode->GitHub] index repair failed", err);
+    }
+    await commitStatsCharts(githubToken, githubRepo, state);
+  } catch (err) {
+    console.warn("[LeetCode->GitHub] could not repair stats for", payload.titleSlug, err);
+  }
+}
+
 async function syncSubmission(payload) {
   if (await alreadySynced(payload.submissionId)) {
     console.log("[LeetCode->GitHub] already synced, skipping", payload.submissionId);
     await logActivity({ ...activityBase(payload), outcome: "skipped" });
+    // Re-running a backfill is the one chance to put right a problem whose
+    // metadata was unavailable the first time, so don't just skip past it.
+    await repairStatsForSyncedSubmission(payload);
     return { ok: true, skipped: true };
   }
 
@@ -734,6 +914,10 @@ async function syncSubmission(payload) {
     return { ok: true, skipped: true, reason: "failed_sync_disabled" };
   }
 
+  // Fill in anything the content script's best-effort metadata fetch missed,
+  // before the charts, the index row and the file path all depend on it.
+  payload = await enrichPayload(payload);
+
   const safeSlug = sanitizeSlug(payload.titleSlug);
   if (!safeSlug) {
     console.warn("[LeetCode->GitHub] refusing to sync a submission with an unusable slug", payload.titleSlug);
@@ -757,22 +941,9 @@ async function syncSubmission(payload) {
     await markSynced(payload.submissionId);
     console.log("[LeetCode->GitHub] synced", filePath);
 
-    if (payload.difficulty) {
-      try {
-        const { stats, solvedProblems, topicCounts } = await updateStats(payload);
-        const platformTotals = await getPlatformTotals();
-        await withRetry(
-          () => commitStatsSvg(githubToken, githubRepo, stats, solvedProblems, platformTotals),
-          "stats svg update"
-        );
-        try {
-          await withRetry(() => commitTopicsSvg(githubToken, githubRepo, topicCounts), "topics svg update");
-        } catch (err) {
-          console.error("[LeetCode->GitHub] topics svg update failed", err);
-        }
-      } catch (err) {
-        console.error("[LeetCode->GitHub] stats svg update failed", err);
-      }
+    const statsState = await updateStats(payload);
+    if (statsState.changed) {
+      await commitStatsCharts(githubToken, githubRepo, statsState);
     }
 
     try {

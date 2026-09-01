@@ -100,7 +100,7 @@ A few things to expect:
 
 - Only **accepted** submissions are backfilled. Replaying years of failed attempts would flood the repo and burn through rate limits for little benefit.
 - It's paced deliberately slowly to stay under LeetCode's rate limits, with periodic pauses. A large history takes a while — that's expected, not a hang.
-- It's safe to re-run. Anything already synced is skipped.
+- It's safe to re-run. Anything already synced is skipped — and re-running repairs the stats charts for any problem whose difficulty and topic data LeetCode didn't return the first time, so it's the fix if the rings ever look behind the table.
 - Keep the LeetCode tab open while it runs. If you close it, the backfill stops — just hit **Backfill** again to pick up where it left off.
 
 ## A couple of things worth knowing
